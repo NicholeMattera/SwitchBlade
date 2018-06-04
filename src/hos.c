@@ -414,18 +414,20 @@ bool hos_launch(gfx_con_t * con, bool hen) {
 		gfx_prompt(con, message, "Decrypting and unpacking pkg1...");
 		
 		pkg1_decrypt(ctxt.pkg1_id, ctxt.pkg1);
-		pkg1_unpack((void *)0x8000D000, (void *)ctxt.pkg1_id->secmon_base, ctxt.pkg1_id, ctxt.pkg1);
+		pkg1_unpack((void *)ctxt.pkg1_id->warmboot_base, (void *)ctxt.pkg1_id->secmon_base, ctxt.pkg1_id, ctxt.pkg1);
 
 		gfx_prompt(con, ok, "Decrypted and unpacked pkg1.");
 	}
 
 	if (ctxt.warmboot)
-		memcpy((void *)0x8000D000, ctxt.warmboot, ctxt.warmboot_size);
+		memcpy((void *)ctxt.pkg1_id->warmboot_base, ctxt.warmboot, ctxt.warmboot_size);
 
-	//Set warmboot address in PMC.
-	PMC(APBDEV_PMC_SCRATCH1) = 0x8000D000;
+	//Set warmboot address in PMC if required.
+	if (ctxt.pkg1_id->set_warmboot)
+		PMC(APBDEV_PMC_SCRATCH1) = 0x8000D000;
 
 	if (ctxt.secmon) {
+		//Replace 'SecureMonitor' if requested.
 		gfx_prompt(con, message, "Replacing secmon...");
 
 		memcpy((void *)ctxt.pkg1_id->secmon_base, ctxt.secmon, ctxt.secmon_size);
@@ -567,6 +569,19 @@ bool hos_launch(gfx_con_t * con, bool hen) {
 	//Signal 'BootConfig'.
 	//*mb_in = 1;
 	//sleep(100);
+
+	//TODO: pkg1.1 locks PMC scratches, we can do that too at some point.
+	/*PMC(0x4) = 0x7FFFF3;
+	PMC(0x2C4) = 0xFFFFFFFF;
+	PMC(0x2D8) = 0xFFAFFFFF;
+	PMC(0x5B0) = 0xFFFFFFFF;
+	PMC(0x5B4) = 0xFFFFFFFF;
+	PMC(0x5B8) = 0xFFFFFFFF;
+	PMC(0x5BC) = 0xFFFFFFFF;
+	PMC(0x5C0) = 0xFFAAFFFF;*/
+
+	//TODO: Cleanup.
+	//display_end();
 
 	//Signal to continue boot.
 	*mb_in = bootStateContinue;
