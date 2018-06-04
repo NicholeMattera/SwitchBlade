@@ -106,7 +106,7 @@ flist_t * read_splashes_from_directory(char * directory) {
 
 void print_header(gfx_con_t * con) {
     static const char switchblade[] =
-		"SwitchBlade v2.0.6 - By StevenMattera\n\n"
+		"SwitchBlade %s - By StevenMattera\n\n"
 		"Based on the awesome work of naehrwert, st4rk\n"
 		"Thanks to: derrek, nedwill, plutoo, shuffle2, smea, thexyz, yellows8\n"
 		"Greetings to: fincs, hexkyz, SciresM, Shiny Quagsire, WinterMute\n"
@@ -114,7 +114,7 @@ void print_header(gfx_con_t * con) {
 		" - FatFs R0.13a (Copyright (C) 2017, ChaN)\n"
 		" - bcl-1.2.0 (Copyright (c) 2003-2006 Marcus Geelnard)\n\n";
 
-	gfx_printf(con, switchblade);
+	gfx_printf(con, switchblade, VERSION);
 }
 
 char * randomly_choose_splash(flist_t * head, char * directory) {

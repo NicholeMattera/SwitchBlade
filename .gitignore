@@ -3,9 +3,10 @@
 .vscode
 
 # Build files and artifacts
-build/*.o
-build/*.elf
-build/bin/*.bin
+build
+build/*
+dist
+dist/*
 
 # Fusee Gelee Launcher
 fusee.py
