@@ -52,15 +52,20 @@ LDFLAGS = $(ARCH) -nostartfiles -lgcc -Wl,--nmagic,--gc-sections
 
 all: $(BUILD)/$(TARGET).bin
 	@[ -d $(BUILD) ] || mkdir -p $(BUILD)
-	@[ -d $(DIST) ] || mkdir -p $(DIST)
-	cp $(BUILD)/$(TARGET).bin $(DIST)
-	cp -R $(RESOURCEDIR)/sdfiles $(DIST)
-	cd $(DIST) && zip -r SwitchBlade-$(APP_VERSION).zip *
-	rm -rf $(DIST)/sdfiles $(DIST)/$(TARGET).bin
 
-clean:
+dist: clean-dist
+	@[ -d $(DIST) ] || mkdir -p $(DIST)
+	@cp $(BUILD)/$(TARGET).bin $(DIST)
+	@cp -R $(RESOURCEDIR)/sdfiles $(DIST)
+	@cd $(DIST) && zip -r SwitchBlade-$(APP_VERSION).zip *
+	@cd $(DIST)/sdfiles && zip -r ../sdfiles.zip *
+	@rm -rf $(DIST)/sdfiles
+
+clean: clean-dist
 	@rm -rf $(OBJS)
 	@rm -rf $(BUILD)
+
+clean-dist:
 	@rm -rf $(DIST)
 
 $(BUILD)/$(TARGET).bin: $(BUILD)/$(TARGET).elf
