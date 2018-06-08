@@ -57,8 +57,8 @@ dist: clean-dist
 	@[ -d $(DIST) ] || mkdir -p $(DIST)
 	@cp $(BUILD)/$(TARGET).bin $(DIST)
 	@cp -R $(RESOURCEDIR)/sdfiles $(DIST)
-	@cd $(DIST) && zip -r SwitchBlade-$(APP_VERSION).zip *
-	@cd $(DIST)/sdfiles && zip -r ../sdfiles.zip *
+	@cd $(DIST) && zip -r SwitchBlade-$(APP_VERSION).zip * >/dev/null
+	@cd $(DIST)/sdfiles && zip -r ../sdfiles.zip * >/dev/null
 	@rm -rf $(DIST)/sdfiles
 
 clean: clean-dist
