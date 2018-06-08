@@ -27,6 +27,10 @@
 #define CONTAINER_OF(mp, t, mn) ((t *)((u32)mp - OFFSET_OF(t, mn)))
 
 typedef enum { false, true } bool;
+typedef char s8;
+typedef short s16;
+typedef int s32;
+typedef long long int s64;
 typedef unsigned char u8;
 typedef unsigned short u16;
 typedef unsigned int u32;
@@ -34,5 +38,11 @@ typedef unsigned long long int u64;
 typedef volatile unsigned char vu8;
 typedef volatile unsigned short vu16;
 typedef volatile unsigned int vu32;
+
+typedef struct _patch_t
+{
+	u32 off;
+	u32 val;
+} patch_t;
 
 #endif

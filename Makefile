@@ -2,11 +2,9 @@ ifeq ($(strip $(DEVKITARM)),)
 $(error "Please set DEVKITARM in your environment. export DEVKITARM=<path to>devkitARM")
 endif
 
-CC = $(DEVKITARM)/bin/arm-none-eabi-gcc
-LD = $(DEVKITARM)/bin/arm-none-eabi-ld
-OBJCOPY = $(DEVKITARM)/bin/arm-none-eabi-objcopy
+include $(DEVKITARM)/base_rules
 
-APP_VERSION	:= 2.0.6
+APP_VERSION	:= 2.0.7
 TARGET := switchblade
 BUILD := build
 BUILD_BINARY := build/bin
@@ -47,7 +45,7 @@ OBJS = $(addprefix $(BUILD)/, \
 OBJS += $(addprefix $(BUILD)/, diskio.o ff.o ffunicode.o)
 
 ARCH := -march=armv4t -mtune=arm7tdmi -mthumb -mthumb-interwork
-CFLAGS = $(ARCH) -O2 -nostdlib -ffunction-sections -fdata-sections -fomit-frame-pointer -fno-inline -std=gnu11 -DVERSION=\"v$(APP_VERSION)\"
+CFLAGS = $(ARCH) -O2 -nostdlib -ffunction-sections -fdata-sections -fomit-frame-pointer -fno-inline -std=gnu11 -Wall -DVERSION=\"v$(APP_VERSION)\"
 LDFLAGS = $(ARCH) -nostartfiles -lgcc -Wl,--nmagic,--gc-sections
 
 .PHONY: all clean

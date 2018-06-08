@@ -14,6 +14,8 @@
 * along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+#include <string.h>
+
 #include "di.h"
 #include "t210.h"
 #include "util.h"
@@ -60,19 +62,19 @@ void display_init()
 	PINMUX_AUX(0x200) &= 0xFFFFFFEF;
 	PINMUX_AUX(0x204) &= 0xFFFFFFEF;
 
-	GPIO_3(0x00) = GPIO_3(0x00) & 0xFFFFFFFC | 0x3;
-	GPIO_3(0x10) = GPIO_3(0x10) & 0xFFFFFFFC | 0x3;
-	GPIO_3(0x20) = GPIO_3(0x20) & 0xFFFFFFFE | 0x1;
+	GPIO_3(0x00) = (GPIO_3(0x00) & 0xFFFFFFFC) | 0x3;
+	GPIO_3(0x10) = (GPIO_3(0x10) & 0xFFFFFFFC) | 0x3;
+	GPIO_3(0x20) = (GPIO_3(0x20) & 0xFFFFFFFE) | 0x1;
 
 	sleep(10000u);
 
-	GPIO_3(0x20) = GPIO_3(0x20) & 0xFFFFFFFD | 0x2;
+	GPIO_3(0x20) = (GPIO_3(0x20) & 0xFFFFFFFD) | 0x2;
 
 	sleep(10000);
 
-	GPIO_6(0x04) = GPIO_6(0x04) & 0xFFFFFFF8 | 0x7;
-	GPIO_6(0x14) = GPIO_6(0x14) & 0xFFFFFFF8 | 0x7;
-	GPIO_6(0x24) = GPIO_6(0x24) & 0xFFFFFFFD | 0x2;
+	GPIO_6(0x04) = (GPIO_6(0x04) & 0xFFFFFFF8) | 0x7;
+	GPIO_6(0x14) = (GPIO_6(0x14) & 0xFFFFFFF8) | 0x7;
+	GPIO_6(0x24) = (GPIO_6(0x24) & 0xFFFFFFFD) | 0x2;
 
 	//Config display interface and display.
 	MIPI_CAL(0x60) = 0;
@@ -83,7 +85,7 @@ void display_init()
 
 	sleep(10000);
 
-	GPIO_6(0x24) = GPIO_6(0x24) & 0xFFFFFFFB | 0x4;
+	GPIO_6(0x24) = (GPIO_6(0x24) & 0xFFFFFFFB) | 0x4;
 
 	sleep(60000);
 
@@ -131,9 +133,14 @@ void display_init()
 	exec_cfg((u32 *)DISPLAY_A_BASE, _display_config_11, 113);
 }
 
+void display_backlight(u8 enable)
+{
+	GPIO_6(0x24) = (GPIO_6(0x24) & 0xFFFFFFFE) | (enable & 1);
+}
+
 void display_end()
 {
-	GPIO_6(0x24) &= 0xFFFFFFFE;
+	display_backlight(0);
 	DSI(_DSIREG(DSI_VIDEO_MODE_CONTROL)) = 1;
 	DSI(_DSIREG(DSI_WR_DATA)) = 0x2805;
 
@@ -180,7 +187,7 @@ void display_end()
 
 	GPIO_6(0x04) &= 0xFFFFFFFE;
 
-	PINMUX_AUX(0x1FC) = PINMUX_AUX(0x1FC) & 0xFFFFFFEF | 0x10;
+	PINMUX_AUX(0x1FC) = (PINMUX_AUX(0x1FC) & 0xFFFFFFEF) | 0x10;
 	PINMUX_AUX(0x1FC) = (PINMUX_AUX(0x1FC) >> 2) << 2 | 1;
 }
 
@@ -193,25 +200,21 @@ void display_color_screen(u32 color)
 	DISPLAY_A(_DIREG(DC_WIN_BD_WIN_OPTIONS)) = 0;
 	DISPLAY_A(_DIREG(DC_WIN_CD_WIN_OPTIONS)) = 0;
 	DISPLAY_A(_DIREG(DC_DISP_BLEND_BACKGROUND_COLOR)) = color;
-	DISPLAY_A(_DIREG(DC_CMD_STATE_CONTROL)) = DISPLAY_A(_DIREG(DC_CMD_STATE_CONTROL)) & 0xFFFFFFFE | GENERAL_ACT_REQ;
+	DISPLAY_A(_DIREG(DC_CMD_STATE_CONTROL)) = (DISPLAY_A(_DIREG(DC_CMD_STATE_CONTROL)) & 0xFFFFFFFE) | GENERAL_ACT_REQ;
 
 	sleep(35000);
 
-	GPIO_6(0x24) = GPIO_6(0x24) & 0xFFFFFFFE | 1;
+	display_backlight(1);
 }
 
-void display_init_framebuffer(u32 *fb, u32 color)
+u32 * display_init_framebuffer()
 {
-	// Clear out random memory where the framebuffer is going to be.
-	for (u32 i = 0; i < 1280 * 768; i++)
-		fb[i] = color;
-
+	//Sanitize framebuffer area. Aligned to 4MB.
+	memset((u32 *)0xC0000000, 0, 0x400000);
 	//This configures the framebuffer @ 0xC0000000 with a resolution of 1280x720 (line stride 768).
 	exec_cfg((u32 *)DISPLAY_A_BASE, cfg_display_framebuffer, 32);
 	
 	sleep(35000);
 
-	GPIO_6(0x24) = GPIO_6(0x24) & 0xFFFFFFFE | 1;
-
-	return;
+	return (u32 *)0xC0000000;
 }

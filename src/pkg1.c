@@ -68,32 +68,6 @@ PATCHSET_DEF(_secmon_5_patchset,
 	//{ 0x12b0 + 0xa18 , _NOP() } // BootConfig Retail Check
 );
 
-// Include kernel patches here, so we can utilize pkg1 id
-PATCHSET_DEF(_kernel_1_patchset,
-	{ 0x3764C, _NOP() },         // Disable SVC verifications
-	{ 0x44074, _MOVZX(8, 1, 0) } // Enable Debug Patch
-);
-
-PATCHSET_DEF(_kernel_2_patchset,
-	{ 0x54834, _NOP() },         // Disable SVC verifications
-	{ 0x6086C, _MOVZX(8, 1, 0) } // Enable Debug Patch
-);
-
-PATCHSET_DEF(_kernel_3_patchset,
-	{ 0x3BD24, _NOP() },         // Disable SVC verifications
-	{ 0x483FC, _MOVZX(8, 1, 0) } // Enable Debug Patch
-);
-
-PATCHSET_DEF(_kernel_4_patchset,
-	{ 0x41EB4, _NOP() },         // Disable SVC verifications
-	{ 0x4EBFC, _MOVZX(8, 1, 0) } // Enable Debug Patch
-);
-
-PATCHSET_DEF(_kernel_5_patchset,
-	{ 0x45E6C, _NOP() },         // Disable SVC verifications
-	{ 0x5513C, _MOVZX(8, 1, 0) } // Enable Debug Patch
-);
-
 /*
 * package1.1 header: <wb, ldr, sm>
 * package1.1 layout:
@@ -106,13 +80,13 @@ PATCHSET_DEF(_kernel_5_patchset,
 */
 
 static const pkg1_id_t _pkg1_ids[] = {
-	{ "20161121183008", 0, 0x1900, 0x3FE0, { 2, 1, 0 }, SM_100_ADR, 0x8000D000, 1, _secmon_1_patchset, _kernel_1_patchset }, //1.0.0 (Patched relocator)
-	{ "20170210155124", 0, 0x1900, 0x3FE0, { 0, 1, 2 }, 0x4002D000, 0x8000D000, 1, _secmon_2_patchset, _kernel_2_patchset }, //2.0.0 - 2.3.0
-	{ "20170519101410", 1, 0x1A00, 0x3FE0, { 0, 1, 2 }, 0x4002D000, 0x8000D000, 1, _secmon_3_patchset, _kernel_3_patchset }, //3.0.0
-	{ "20170710161758", 2, 0x1A00, 0x3FE0, { 0, 1, 2 }, 0x4002D000, 0x8000D000, 1, _secmon_3_patchset, _kernel_3_patchset }, //3.0.1 - 3.0.2
-	{ "20170921172629", 3, 0x1800, 0x3FE0, { 1, 2, 0 }, 0x4002B000, 0x4003B000, 0, _secmon_4_patchset, _kernel_4_patchset }, //4.0.0 - 4.1.0
-	{ "20180220163747", 4, 0x1900, 0x3FE0, { 1, 2, 0 }, 0x4002B000, 0x4003B000, 0, _secmon_5_patchset, _kernel_5_patchset }, //5.0.0 - 5.0.2
-	{ NULL, 0, 0, 0, 0 } //End.
+	{ "20161121183008", 0, 0x1900, 0x3FE0, { 2, 1, 0 }, SM_100_ADR, 0x8000D000, 1, _secmon_1_patchset }, //1.0.0 (Patched relocator)
+	{ "20170210155124", 0, 0x1900, 0x3FE0, { 0, 1, 2 }, 0x4002D000, 0x8000D000, 1, _secmon_2_patchset }, //2.0.0 - 2.3.0
+	{ "20170519101410", 1, 0x1A00, 0x3FE0, { 0, 1, 2 }, 0x4002D000, 0x8000D000, 1, _secmon_3_patchset }, //3.0.0
+	{ "20170710161758", 2, 0x1A00, 0x3FE0, { 0, 1, 2 }, 0x4002D000, 0x8000D000, 1, _secmon_3_patchset }, //3.0.1 - 3.0.2
+	{ "20170921172629", 3, 0x1800, 0x3FE0, { 1, 2, 0 }, 0x4002B000, 0x4003B000, 0, _secmon_4_patchset }, //4.0.0 - 4.1.0
+	{ "20180220163747", 4, 0x1900, 0x3FE0, { 1, 2, 0 }, 0x4002B000, 0x4003B000, 0, _secmon_5_patchset }, //5.0.0 - 5.1.0
+	{ NULL } //End.
 };
 
 
@@ -132,7 +106,7 @@ void pkg1_decrypt(const pkg1_id_t *id, u8 *pkg1)
 	se_aes_crypt_ctr(11, pkg11 + 0x20, pkg11_size, pkg11 + 0x20, pkg11_size, pkg11 + 0x10);
 }
 
-void pkg1_unpack(void *warmboot_dst, void *secmon_dst, const pkg1_id_t *id, u8 *pkg1)
+void pkg1_unpack(void *warmboot_dst, void *secmon_dst, void *ldr_dst, const pkg1_id_t *id, u8 *pkg1)
 {
 	pk11_hdr_t *hdr = (pk11_hdr_t *)(pkg1 + id->pkg11_off + 0x20);
 
@@ -144,6 +118,8 @@ void pkg1_unpack(void *warmboot_dst, void *secmon_dst, const pkg1_id_t *id, u8 *
 	{
 		if (id->sec_map[i] == 0 && warmboot_dst)
 			memcpy(warmboot_dst, pdata, sec_size[id->sec_map[i]]);
+		else if (id->sec_map[i] == 1 && ldr_dst)
+			memcpy(ldr_dst, pdata, sec_size[id->sec_map[i]]);
 		else if (id->sec_map[i] == 2 && secmon_dst)
 			memcpy(secmon_dst, pdata, sec_size[id->sec_map[i]]);
 		pdata += sec_size[id->sec_map[i]];

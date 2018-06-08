@@ -33,14 +33,41 @@
 #include "ff.h"
 #include "ini.h"
 
-enum KB_FIRMWARE_VERSION {
-	KB_FIRMWARE_VERSION_100_200 = 0,
-	KB_FIRMWARE_VERSION_300 = 1,
-	KB_FIRMWARE_VERSION_301 = 2,
-	KB_FIRMWARE_VERSION_400 = 3,
-	KB_FIRMWARE_VERSION_500 = 4,
-	KB_FIRMWARE_VERSION_MAX
-};
+typedef struct _launch_ctxt_t
+{
+	void *keyblob;
+
+	void *pkg1;
+	const pkg1_id_t *pkg1_id;
+	const pkg2_kernel_id_t *pkg2_kernel_id;
+
+	void *warmboot;
+	u32 warmboot_size;
+	void *secmon;
+	u32 secmon_size;
+
+	void *pkg2;
+	u32 pkg2_size;
+
+	void *kernel;
+	u32 kernel_size;
+	link_t kip1_list;
+
+	int svcperm;
+	int debugmode;
+} launch_ctxt_t;
+
+typedef struct _merge_kip_t
+{
+	void *kip1;
+	link_t link;
+} merge_kip_t;
+
+#define KB_FIRMWARE_VERSION_100_200 0
+#define KB_FIRMWARE_VERSION_300 1
+#define KB_FIRMWARE_VERSION_301 2
+#define KB_FIRMWARE_VERSION_400 3
+#define KB_FIRMWARE_VERSION_500 4
 
 #define NUM_KEYBLOB_KEYS 5
 static const u8 keyblob_keyseeds[NUM_KEYBLOB_KEYS][0x10] = {
@@ -69,6 +96,18 @@ static const u8 master_keyseed_4xx[0x10] =
 static const u8 console_keyseed_4xx[0x10] = 
 	{ 0x0C, 0x91, 0x09, 0xDB, 0x93, 0x93, 0x07, 0x81, 0x07, 0x3C, 0xC4, 0x16, 0x22, 0x7C, 0x6C, 0x28 };
 
+#define CRC32C_POLY 0x82F63B78
+u32 crc32c(const u8 *buf, u32 len)
+{
+	u32 crc = 0xFFFFFFFF;
+	while (len--)
+	{
+		crc ^= *buf++;
+		for (int i = 0; i < 8; i++)
+			crc = crc & 1 ? (crc >> 1) ^ CRC32C_POLY : crc >> 1;
+	}
+	return ~crc;
+}
 
 static void _se_lock() {
 	for (u32 i = 0; i < 16; i++)
@@ -83,7 +122,6 @@ static void _se_lock() {
 	SE(SE_SECURITY_0) &= 0xFFFFFFFB; //Make access lock regs secure only.
 }
 
-// <-- key derivation algorithm
 int keygen(u8 *keyblob, u32 kb, void *tsec_fw) {
 	u8 tmp[0x10];
 
@@ -116,7 +154,8 @@ int keygen(u8 *keyblob, u32 kb, void *tsec_fw) {
 
 	se_aes_crypt_block_ecb(0x0C, 0, tmp, master_keyseed_retail);
 
-	switch (kb) {
+	switch (kb)
+	{
 		case KB_FIRMWARE_VERSION_100_200:
 		case KB_FIRMWARE_VERSION_300:
 		case KB_FIRMWARE_VERSION_301:
@@ -140,37 +179,12 @@ int keygen(u8 *keyblob, u32 kb, void *tsec_fw) {
 		break;
 	}
 
-	// Package2 key 
+	//Package2 key.
 	se_key_acc_ctrl(0x08, 0x15);
 	se_aes_unwrap_key(0x08, 0x0C, key8_keyseed);
+
+	return 1;
 }
-
-typedef struct _launch_ctxt_t {
-	void *keyblob;
-
-	void *pkg1;
-	const pkg1_id_t *pkg1_id;
-
-	void *warmboot;
-	u32 warmboot_size;
-	void *secmon;
-	u32 secmon_size;
-
-	void *pkg2;
-	u32 pkg2_size;
-
-	void *kernel;
-	u32 kernel_size;
-	link_t kip1_list;
-
-	u8 *svcperm;
-	u8 *debugmode;
-} launch_ctxt_t;
-
-typedef struct _merge_kip_t {
-	void *kip1;
-	link_t link;
-} merge_kip_t;
 
 static bool _read_emmc_pkg1(launch_ctxt_t *ctxt, gfx_con_t * con) {
 	int res = false;
@@ -318,10 +332,10 @@ static bool _config_kip1(gfx_con_t * con, launch_ctxt_t * ctxt, const char * val
 
 static bool _config_svcperm(gfx_con_t * con, launch_ctxt_t *ctxt, const char *value)
 {
-	if (*(u8 *)value == '1')
+	if (*value == '1')
 	{
 		gfx_prompt(con, ok, "Disabled SVC verification.");
-		ctxt->svcperm = malloc(1);
+		ctxt->svcperm = 1;
 	}
 		
 	return true;
@@ -329,10 +343,10 @@ static bool _config_svcperm(gfx_con_t * con, launch_ctxt_t *ctxt, const char *va
 
 static bool _config_debugmode(gfx_con_t * con, launch_ctxt_t *ctxt, const char *value)
 {
-	if (*(u8 *)value == '1')
+	if (*value == '1')
 	{
 		gfx_prompt(con, ok, "Enabled debug mode.");
-		ctxt->debugmode = malloc(1);
+		ctxt->debugmode = 1;
 	}
 
 	return true;
@@ -383,8 +397,9 @@ ini_sec_t * loadConfig(gfx_con_t * con, bool hen) {
 }
 
 bool hos_launch(gfx_con_t * con, bool hen) {
-	int bootStatePackage2, bootStateContinue;
+	int bootStateDramPkg2, bootStatePkg2Continue;
 	launch_ctxt_t ctxt;
+
 	memset(&ctxt, 0, sizeof(launch_ctxt_t));
 	list_init(&ctxt.kip1_list);
 
@@ -414,11 +429,12 @@ bool hos_launch(gfx_con_t * con, bool hen) {
 		gfx_prompt(con, message, "Decrypting and unpacking pkg1...");
 		
 		pkg1_decrypt(ctxt.pkg1_id, ctxt.pkg1);
-		pkg1_unpack((void *)ctxt.pkg1_id->warmboot_base, (void *)ctxt.pkg1_id->secmon_base, ctxt.pkg1_id, ctxt.pkg1);
+		pkg1_unpack((void *)ctxt.pkg1_id->warmboot_base, (void *)ctxt.pkg1_id->secmon_base, NULL, ctxt.pkg1_id, ctxt.pkg1);
 
 		gfx_prompt(con, ok, "Decrypted and unpacked pkg1.");
 	}
 
+	//Replace 'warmboot.bin' if requested.
 	if (ctxt.warmboot)
 		memcpy((void *)ctxt.pkg1_id->warmboot_base, ctxt.warmboot, ctxt.warmboot_size);
 
@@ -434,95 +450,80 @@ bool hos_launch(gfx_con_t * con, bool hen) {
 
 		gfx_prompt(con, ok, "Secmon replaced.");
 	}
-	else
-	{
+	else {
 		patch_t *secmon_patchset = ctxt.pkg1_id->secmon_patchset;
-		//In case a kernel patch option is set. Allows to disable Svc Verififcation or/and enable Debug mode
-		patch_t *kernel_patchset = ctxt.pkg1_id->kernel_patchset;
-		
-		if (secmon_patchset != NULL || (kernel_patchset != NULL && (ctxt.svcperm || ctxt.debugmode))) {
-			if (secmon_patchset != NULL)
-			{
-				gfx_prompt(con, message, "Patching secmon...");
+
+		gfx_prompt(con, message, "Patching secmon...");
 				
-				for (u32 i = 0; secmon_patchset[i].off != 0xFFFFFFFF; i++)
-					*(vu32 *)(ctxt.pkg1_id->secmon_base + secmon_patchset[i].off) = secmon_patchset[i].val;
+		for (u32 i = 0; secmon_patchset[i].off != 0xFFFFFFFF; i++)
+			*(vu32 *)(ctxt.pkg1_id->secmon_base + secmon_patchset[i].off) = secmon_patchset[i].val;
 
-				gfx_prompt(con, ok, "Secmon patched.");
-			}
+		gfx_prompt(con, ok, "Secmon patched.");
+	}
 
-			gfx_prompt(con, message, "Loading pkg2...");
+	gfx_prompt(con, message, "Loading pkg2...");
 			
-			//Read package2.
-			if (!_read_emmc_pkg2(&ctxt, con)) {
-				gfx_prompt(con, error, "Failed to load pkg2.");
-				return false;
+	//Read package2.
+	if (!_read_emmc_pkg2(&ctxt, con)) {
+		gfx_prompt(con, error, "Failed to load pkg2.");
+		return false;
+	}
+
+	gfx_prompt(con, ok, "Loaded pkg2.");
+	gfx_prompt(con, message, "Decrypting pkg2...");
+
+	//Decrypt package2 and parse KIP1 blobs in INI1 section.
+	pkg2_hdr_t *pkg2_hdr = pkg2_decrypt(ctxt.pkg2);
+
+	gfx_prompt(con, ok, "Decrypted pkg2.");
+	gfx_prompt(con, message, "Parsing out KIP1 blobs...");
+
+	LIST_INIT(kip1_info);
+	pkg2_parse_kips(&kip1_info, pkg2_hdr);
+
+	gfx_prompt(con, ok, "Parsed out KIP1 blobs.");
+
+	//Use the kernel included in package2 in case we didn't load one already.
+	if (!ctxt.kernel) {
+		ctxt.kernel = pkg2_hdr->data;
+		ctxt.kernel_size = pkg2_hdr->sec_size[PKG2_SEC_KERNEL];
+
+		if (ctxt.svcperm || ctxt.debugmode) {
+			u32 kernel_crc32 = crc32c((u8 *)ctxt.kernel, ctxt.kernel_size);
+			ctxt.pkg2_kernel_id = pkg2_identify(kernel_crc32);
+
+			patch_t *kernel_patchset = ctxt.pkg2_kernel_id->kernel_patchset;
+			if (kernel_patchset != NULL) {
+				gfx_prompt(con, message, "Patching Kernel...");
+
+				if (ctxt.svcperm && kernel_patchset[0].off != 0xFFFFFFFF)
+					*(vu32 *)(ctxt.kernel + kernel_patchset[0].off) = kernel_patchset[0].val;
+
+				if (ctxt.debugmode && kernel_patchset[1].off != 0xFFFFFFFF)
+					*(vu32 *)(ctxt.kernel + kernel_patchset[1].off) = kernel_patchset[1].val;
+
+				gfx_prompt(con, ok, "Kernel Patched.");
 			}
-
-			gfx_prompt(con, ok, "Loaded pkg2.");
-			gfx_prompt(con, message, "Decrypting pkg2...");
-
-			//Decrypt package2 and parse KIP1 blobs in INI1 section.
-			pkg2_hdr_t *pkg2_hdr = pkg2_decrypt(ctxt.pkg2);
-
-			gfx_prompt(con, ok, "Decrypted pkg2.");
-			gfx_prompt(con, message, "Parsing out KIP1 blobs...");
-
-			LIST_INIT(kip1_info);
-			pkg2_parse_kips(&kip1_info, pkg2_hdr);
-
-			gfx_prompt(con, ok, "Parsed out KIP1 blobs.");
-
-			//Use the kernel included in package2 in case we didn't load one already.
-			if (!ctxt.kernel)
-			{
-				ctxt.kernel = pkg2_hdr->data;
-				ctxt.kernel_size = pkg2_hdr->sec_size[PKG2_SEC_KERNEL];
-
-				if (kernel_patchset != NULL && (ctxt.svcperm || ctxt.debugmode))
-				{
-					gfx_prompt(con, message, "Patching Kernel...");
-
-					if (ctxt.svcperm && kernel_patchset[0].off != 0xFFFFFFFF)
-						*(vu32 *)(ctxt.kernel + kernel_patchset[0].off) = kernel_patchset[0].val;
-
-					if (ctxt.debugmode && kernel_patchset[1].off != 0xFFFFFFFF)
-						*(vu32 *)(ctxt.kernel + kernel_patchset[1].off) = kernel_patchset[1].val;
-
-					gfx_prompt(con, ok, "Kernel Patched.");
-				}
-			}
-			
-			//Merge extra KIP1s into loaded ones.
-			LIST_FOREACH_ENTRY(merge_kip_t, mki, &ctxt.kip1_list, link) {
-				gfx_prompt(con, message, "Merging %s KIP1 blobs...", ((pkg2_kip1_t *)mki->kip1)->name);
-	
-				pkg2_merge_kip(&kip1_info, (pkg2_kip1_t *)mki->kip1);
-
-				gfx_prompt(con, ok, "Merged %s KIP1 blobs...", ((pkg2_kip1_t *)mki->kip1)->name);
-			}
-
-			gfx_prompt(con, message, "Encrypting pkg2...");
-
-			//Rebuild and encrypt package2.
-			pkg2_build_encrypt((void *)0xA9800000, ctxt.kernel, ctxt.kernel_size, &kip1_info);
-
-			gfx_prompt(con, ok, "Encrypted pkg2.");
-		} else {
-			gfx_prompt(con, message, "Loading pkg2...");
-
-			//Read package2.
-			if (!_read_emmc_pkg2(&ctxt, con)) {
-				gfx_prompt(con, error, "Failed to load pkg2.");
-				return false;
-			}
-
-			gfx_prompt(con, ok, "Loaded pkg2.");
-			memcpy((void *)0xA9800000, ctxt.pkg2, ctxt.pkg2_size);
 		}
 	}
-	
-    // Unmount SD Card
+
+	//Merge extra KIP1s into loaded ones.
+	LIST_FOREACH_ENTRY(merge_kip_t, mki, &ctxt.kip1_list, link) {
+		gfx_prompt(con, message, "Merging %s KIP1 blobs...", ((pkg2_kip1_t *)mki->kip1)->name);
+
+		pkg2_merge_kip(&kip1_info, (pkg2_kip1_t *)mki->kip1);
+
+		gfx_prompt(con, ok, "Merged %s KIP1 blobs...", ((pkg2_kip1_t *)mki->kip1)->name);
+	}
+
+	gfx_prompt(con, message, "Encrypting pkg2...");
+
+	//Rebuild and encrypt package2.
+	pkg2_build_encrypt((void *)0xA9800000, ctxt.kernel, ctxt.kernel_size, &kip1_info);
+
+	gfx_prompt(con, ok, "Encrypted pkg2.");
+
+	//Unmount SD card.
 	f_mount(NULL, "", 1);
 
 	gfx_prompt(con, message, "Booting...");
@@ -530,45 +531,46 @@ bool hos_launch(gfx_con_t * con, bool hen) {
 	se_aes_key_clear(0x8);
 	se_aes_key_clear(0xB);
 
-	switch (ctxt.pkg1_id->kb) {
-		case KB_FIRMWARE_VERSION_100_200:
-		case KB_FIRMWARE_VERSION_300:
-		case KB_FIRMWARE_VERSION_301:
-			se_key_acc_ctrl(0xC, 0xFF);
-			se_key_acc_ctrl(0xD, 0xFF);
-			bootStatePackage2 = 2;
-			bootStateContinue = 3;
-			break;
-		default:
-		case KB_FIRMWARE_VERSION_400:
-		case KB_FIRMWARE_VERSION_500:
-			se_key_acc_ctrl(0xC, 0xFF);
-			se_key_acc_ctrl(0xF, 0xFF);
-			bootStatePackage2 = 3;
-			bootStateContinue = 4;
-			break;
+	switch (ctxt.pkg1_id->kb)
+	{
+	case KB_FIRMWARE_VERSION_100_200:
+	case KB_FIRMWARE_VERSION_300:
+	case KB_FIRMWARE_VERSION_301:
+		se_key_acc_ctrl(0xC, 0xFF);
+		se_key_acc_ctrl(0xD, 0xFF);
+		bootStateDramPkg2 = 2;
+		bootStatePkg2Continue = 3;
+		break;
+	default:
+	case KB_FIRMWARE_VERSION_400:
+	case KB_FIRMWARE_VERSION_500:
+		se_key_acc_ctrl(0xC, 0xFF);
+		se_key_acc_ctrl(0xF, 0xFF);
+		bootStateDramPkg2 = 2;
+		bootStatePkg2Continue = 4;
+		break;
 	}
 
-	//Clear 'BootConfig' for retail systems.
+	//TODO: Don't Clear 'BootConfig' for retail >1.0.0.
 	memset((void *)0x4003D000, 0, 0x3000);
 
 	//Lock SE before starting 'SecureMonitor'.
 	_se_lock();
 
+	//< 4.0.0 Signals. 0: Nothing ready, 1: BCT ready, 2: DRAM and pkg2 ready, 3: Continue boot
+	//>=4.0.0 Signals. 0: Nothing ready, 1: BCT ready, 2: DRAM ready, 4: pkg2 ready and continue boot
 	vu32 *mb_in = (vu32 *)0x40002EF8;
+	//Non-zero: Secmon ready
 	vu32 *mb_out = (vu32 *)0x40002EFC;
 
-	*mb_in = bootStatePackage2;
+	//Start from DRAM ready signal
+	*mb_in = bootStateDramPkg2;
 	*mb_out = 0;
 
 	//Wait for secmon to get ready.
 	cluster_boot_cpu0(ctxt.pkg1_id->secmon_base);
 	while (!*mb_out)
 		sleep(1);
-
-	//Signal 'BootConfig'.
-	//*mb_in = 1;
-	//sleep(100);
 
 	//TODO: pkg1.1 locks PMC scratches, we can do that too at some point.
 	/*PMC(0x4) = 0x7FFFF3;
@@ -583,8 +585,8 @@ bool hos_launch(gfx_con_t * con, bool hen) {
 	//TODO: Cleanup.
 	//display_end();
 
-	//Signal to continue boot.
-	*mb_in = bootStateContinue;
+	//Signal to pkg2 ready and continue boot.
+	*mb_in = bootStatePkg2Continue;
 
 	//Halt ourselves in waitevent state.
 	while (1)
